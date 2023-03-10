@@ -32,7 +32,9 @@ class chat_write(threading.Thread):
 				break
 
 sock=sk.socket(sk.AF_INET,sk.SOCK_STREAM)
-ip=input("The IP address of server?")
+# ip=input("The IP address of server?")
+ip='10.206.54.204'
+# ip='127.0.0.1'
 work(sock,'sock.connect((ip,8001))','connection')
 flag=1
 chat_r=chat_read()
