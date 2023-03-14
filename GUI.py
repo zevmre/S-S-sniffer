@@ -8,12 +8,6 @@ import socket
 
 Headers=['Source','Destination','Protocol','Length']
 sniff_result=[]
-class TableItem(QPushButton):
-    def __init__(self,massage):
-        super().__init__(self,massage)
-        self.clicked.connect(self.click)
-    def click():
-        QMessage.about()
 
 class TableView(QTableWidget):
     def __init__(self,*args):
@@ -22,102 +16,158 @@ class TableView(QTableWidget):
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.setSelectionBehavior(QTableWidget.SelectRows)
         self.setSelectionMode(QTableWidget.SingleSelection)
-        self.resize(1200,1500)
-        self.setColumnWidth(0,450)
-        self.setColumnWidth(1,450)
-        self.setColumnWidth(2,100)
+        self.setColumnWidth(0,400)
+        self.setColumnWidth(1,400)
+        self.setColumnWidth(2,200)
         self.setColumnWidth(3,100)
+        self.rowcount=0
+        # self.SignalConnect()
     def AddRow(self,data):
-        row_num=self.rowCount()
-        self.insertRow(row_num)
+        self.insertRow(self.rowcount)
         for i in range(len(data)):
-            self.setItem(row_num,i,QTableWidgetItem(str(data[i])))
-    def GetInfo(self,index):
-        global sniff_result
-        row=index.row()
-        QMessageBox.about(self,"test",sniff_result[row].show(dump=True))
+            self.setItem(self.rowcount,i,QTableWidgetItem(str(data[i])))
+        self.rowcount=self.rowcount+1
+    def myclear(self):
+        for i in range(self.rowcount):
+            self.removeRow(0)
+        self.rowcount=0
 
-    def work(self):
-        self.thread=QThread()
-        self.worker=sniff_data()
-        self.worker.moveToThread(self.thread)
-        self.thread.started.connect(self.worker.run)
-        self.worker.finished.connect(self.thread.quit)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.thread.finished.connect(self.thread.deleteLater)
-        self.worker.progress.connect(self.AddRow)
-        self.doubleClicked.connect(self.GetInfo)
-        self.thread.start()
-
-class sniff_data(QObject):
+class sniffer(QObject):
     progress=pyqtSignal(list)
-    finished=pyqtSignal()
-    def __init__(self):
+    # finished=pyqtSignal()
+    def __init__(self,filter_str=""):
         super().__init__()
+        self.sniffer=AsyncSniffer(filter=filter_str,store=False,prn=(lambda x:self.callback(x)))
+        self.history=scapy.plist.PacketList()
+    def process(self,pkt):
+        link=pkt[Ether]
+        proto=link.type
+        protostr=""
+        if(proto==2048):
+            internet=pkt[IP]
+            proto=internet.proto
+            protostr='IP'
+            if(proto==6): protostr='TCP/'+protostr
+            elif(proto==17): protostr='UDP/'+protostr
+            elif(proto==1): protostr='ICMP/'+protostr
+            else: raise "NewProtocol"
+            data=[internet.src,internet.dst,protostr,internet.len]
+        elif(proto==34525):
+            internet=pkt[IPv6]
+            proto=internet.nh
+            protostr='IPv6'
+            if(proto==6): protostr='TCP/'+protostr
+            elif(proto==17): protostr='UDP/'+protostr
+            elif(proto==58): protostr='ICMPv6/'+protostr
+            else: raise "NewProtocol"
+            data=[internet.src,internet.dst,protostr,internet.plen]
+        elif(pkt[Ether].type==2054):
+            internet=pkt[ARP]
+            proto=internet.ptype
+            protostr='ARP'
+            if(proto==2048): protostr='IP/'+protostr
+            elif(proto==34525): protostr='IPv6/'+protostr
+            else: raise "NewProtocol"
+            data=[internet.psrc,internet.pdst,protostr,internet.plen]
+        else: raise "NewProtocol"
+        return data
     def callback(self,pkt):
-        global sniff_result
-        sniff_result.append(pkt)
-        try:
-            link=pkt[Ether]
-            proto=link.type
-            protostr=""
-            pktlen=0
-            if(proto==2048):
-                internet=pkt[IP]
-                proto=internet.proto
-                protostr='IP'
-                if(proto==6):
-                    protostr='TCP/'+protostr
-                elif(proto==17):
-                    protostr='UDP/'+protostr
-                data=[internet.src,internet.dst,protostr,internet.len]
-            elif(proto==34525):
-                internet=pkt[IPv6]
-                proto=internet.nh
-                protostr='IPv6'
-                if(proto==6):
-                    protostr='TCP/'+protostr
-                elif(proto==17):
-                    protostr='UDP/'+protostr
-                data=[internet.src,internet.dst,protostr,internet.plen]
-            elif(pkt[Ether].type==2054):
-                # ARP
-                internet=pkt[ARP]
-                proto=internet.ptype
-                protostr='ARP'
-                if(proto==2048):
-                    protostr='IP/'+protostr
-                elif(proto==34525):
-                    protostr='IPv6/'+protostr
-                data=[internet.psrc,internet.pdst,protostr,internet.plen]
-            else:
-                raise "NewProtocol"
-            self.progress.emit(data)
+        self.history.append(pkt)
+        try: self.progress.emit(self.process(pkt))
         except:
             print(pkt.show())
             raise RuntimeError
-    def run(self):
-        sniff(prn=(lambda x:self.callback(x)),count=0)
+    def running(self):
+        return self.sniffer.running
+    def start(self):
+        self.sniffer.start()
+    def pause(self):
+        if(self.sniffer.running):self.sniffer.stop()
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        # self.resize(2000,731)
-        # self.move(200,200)
         self.setWindowTitle('MySniffer')
         self.setWindowState(Qt.WindowMaximized)
-    def work(self):
+
         self.table=TableView(0,4,self)
-        self.table.move(0,0)
+        self.detail=QPlainTextEdit(self)
+        self.info=QPlainTextEdit(self)
+        self.btnstart=QPushButton('Start',self)
+        self.btnpause=QPushButton('Pause',self)
+        self.bpf=QPlainTextEdit(self)
+        self.bpfbtn=QPushButton('Sniff',self)
+        self.res=QPlainTextEdit(self)
+        self.resbtn=QPushButton('filter',self)
+
+        self.sniffer=sniffer()
+        self.layout()
+        self.connect()
+    def connect(self):
+        self.table.doubleClicked.connect(self.GetInfo)
+        self.sniffer.progress.connect(self.table.AddRow)
+        self.btnstart.clicked.connect(self.sniffer.start)
+        self.btnpause.clicked.connect(self.sniffer.pause)
+        self.bpfbtn.clicked.connect(self.startover)
+        self.resbtn.clicked.connect(self.resfilter)
+    def GetInfo(self,index):
+        row=index.row()
+        self.detail.setPlainText(self.sniffer.history[row].show(dump=True))
+        self.info.setPlainText(self.sniffer.history[row].summary())
+    def layout(self):
+        self.table.resize(1200,1500)
+        self.table.move(0,100)
+
+        self.detail.setReadOnly(True)
+        self.detail.resize(700,1600)
+        self.detail.move(1200,0)
+
+        self.info.setReadOnly(True)
+        self.info.resize(1900,100)
+        self.info.move(0,1600)
+
+        self.btnstart.resize(200,100)
+        self.btnstart.move(0,0)
+
+        self.btnpause.resize(200,100)
+        self.btnpause.move(200,0)
+
+        self.bpf.resize(700,50)
+        self.bpf.move(400,0)
+        self.bpfbtn.resize(100,50)
+        self.bpfbtn.move(1100,0)
+
+        self.res.resize(700,50)
+        self.res.move(400,50)
+        self.resbtn.resize(100,50)
+        self.resbtn.move(1100,50)
+
         self.show()
-        self.table.work()
+    def startover(self):
+        bpf_filter=self.bpf.toPlainText()
+        # QMessageBox().about(self,'test',bpf_filter)
+        self.sniffer.pause()
+        self.sniffer.progress.disconnect(self.table.AddRow)
+        self.btnstart.clicked.disconnect(self.sniffer.start)
+        self.btnpause.clicked.disconnect(self.sniffer.pause)
+        self.sniffer=sniffer(bpf_filter)
+        self.table.myclear()
+        # self.table.doubleClicked.connect(self.GetInfo)
+        self.sniffer.progress.connect(self.table.AddRow)
+        self.btnstart.clicked.connect(self.sniffer.start)
+        self.btnpause.clicked.connect(self.sniffer.pause)
+    def resfilter(self):
+        result_filter=self.res.toPlainText()
+        self.table.myclear()
+        self.sniffer.pause()
+        after_filter=self.sniffer.history.filter(lambda x:x.haslayer(result_filter))
+        self.sniffer.history=after_filter
+        for i in after_filter:
+            self.table.AddRow(self.sniffer.process(i))
+        # self.table.make_table(self.sniffer.history)
 
 app=QApplication([])
 app.setStyle('Fusion')
 win=MainWindow()
-win.work()
-
-# sniff(iface='Software Loopback Interface 1',filter='port 8001',prn=sniff_callback,count=10)
-# sniff(filter='tcp',prn=sniff_callback,count=10)
 
 app.exec_()
