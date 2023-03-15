@@ -38,7 +38,9 @@ class sniffer(QObject):
     def __init__(self,filter_str=""):
         super().__init__()
         self.sniffer=AsyncSniffer(filter=filter_str,store=False,prn=(lambda x:self.callback(x)))
+        self.database=scapy.plist.PacketList()
         self.history=scapy.plist.PacketList()
+        self.show=(lambda pkt:True)
     def process(self,pkt):
         link=pkt[Ether]
         proto=link.type
@@ -72,6 +74,8 @@ class sniffer(QObject):
         else: raise "NewProtocol"
         return data
     def callback(self,pkt):
+        self.database.append(pkt)
+        if(not self.show(pkt)):return
         self.history.append(pkt)
         try: self.progress.emit(self.process(pkt))
         except:
@@ -83,6 +87,13 @@ class sniffer(QObject):
         self.sniffer.start()
     def pause(self):
         if(self.sniffer.running):self.sniffer.stop()
+    def filter(self):
+        self.history=self.database.filter(self.show)
+        for pkt in self.history:
+            try: self.progress.emit(self.process(pkt))
+            except:
+                print(pkt.show())
+                raise RuntimeError
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -95,8 +106,9 @@ class MainWindow(QMainWindow):
         self.info=QPlainTextEdit(self)
         self.btnstart=QPushButton('Start',self)
         self.btnpause=QPushButton('Pause',self)
+        self.btnpause.setEnabled(False)
         self.bpf=QPlainTextEdit(self)
-        self.bpfbtn=QPushButton('Sniff',self)
+        self.bpfbtn=QPushButton('sniff',self)
         self.res=QPlainTextEdit(self)
         self.resbtn=QPushButton('filter',self)
 
@@ -107,7 +119,12 @@ class MainWindow(QMainWindow):
         self.table.doubleClicked.connect(self.GetInfo)
         self.sniffer.progress.connect(self.table.AddRow)
         self.btnstart.clicked.connect(self.sniffer.start)
+        self.btnstart.clicked.connect(lambda:self.btnstart.setEnabled(False))
+        self.btnstart.clicked.connect(lambda:self.btnpause.setEnabled(True))
+        self.btnstart.clicked.connect(lambda:self.bpfbtn.setEnabled(False))
         self.btnpause.clicked.connect(self.sniffer.pause)
+        self.btnpause.clicked.connect(lambda:self.btnpause.setEnabled(False))
+        self.btnpause.clicked.connect(lambda:self.btnstart.setEnabled(True))
         self.bpfbtn.clicked.connect(self.startover)
         self.resbtn.clicked.connect(self.resfilter)
     def GetInfo(self,index):
@@ -145,26 +162,40 @@ class MainWindow(QMainWindow):
         self.show()
     def startover(self):
         bpf_filter=self.bpf.toPlainText()
-        # QMessageBox().about(self,'test',bpf_filter)
-        self.sniffer.pause()
         self.sniffer.progress.disconnect(self.table.AddRow)
         self.btnstart.clicked.disconnect(self.sniffer.start)
         self.btnpause.clicked.disconnect(self.sniffer.pause)
         self.sniffer=sniffer(bpf_filter)
-        self.table.myclear()
-        # self.table.doubleClicked.connect(self.GetInfo)
         self.sniffer.progress.connect(self.table.AddRow)
         self.btnstart.clicked.connect(self.sniffer.start)
         self.btnpause.clicked.connect(self.sniffer.pause)
+    def filter_func(self):
+        filter_str=self.res.toPlainText()
+        internet_protocols=['IP','IPv6','ARP']
+        transport_protocols=['TCP','UDP','ICMP','ICMPv6']
+        elems=filter_str.split(' and ')
+        func_str='True'
+        for ele in elems:
+            func_str=func_str+" and"
+            ele=ele.upper()
+            if ('not' in ele):
+                ele=ele[4:]
+                func_str=func_str+" not"
+            if(ele in internet_protocols):
+                internet=ele
+                func_str=func_str+" pkt.haslayer("+ele+")"
+            elif(ele in transport_protocols):
+                transport=ele
+                func_str=func_str+" pkt.haslayer("+ele+")"
+            else:
+                port_num=ele.split(" ")[-1]
+                func_str=func_str+" (pkt["+transport+"].sport=="+port_num+" or pkt["+transport+"].dport=="+port_num+")"
+        return (lambda pkt:eval(func_str))
     def resfilter(self):
-        result_filter=self.res.toPlainText()
-        self.table.myclear()
         self.sniffer.pause()
-        after_filter=self.sniffer.history.filter(lambda x:x.haslayer(result_filter))
-        self.sniffer.history=after_filter
-        for i in after_filter:
-            self.table.AddRow(self.sniffer.process(i))
-        # self.table.make_table(self.sniffer.history)
+        self.table.myclear()
+        self.sniffer.show=self.filter_func()
+        self.sniffer.filter()
 
 app=QApplication([])
 app.setStyle('Fusion')
