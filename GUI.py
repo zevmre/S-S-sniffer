@@ -1,13 +1,16 @@
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
-from scapy.all import *
-from scapy.utils import wrpcap
-import dpkt
-import socket
+# from scapy.all import *
+from mysniffer import *
 
 Headers=['Source','Destination','Protocol','Length']
 sniff_result=[]
+
+class MessageBox(QMessageBox):
+    def __init__():
+        # show_interfaces()
+        return
 
 class TableView(QTableWidget):
     def __init__(self,*args):
@@ -21,79 +24,43 @@ class TableView(QTableWidget):
         self.setColumnWidth(2,200)
         self.setColumnWidth(3,100)
         self.rowcount=0
-        # self.SignalConnect()
     def AddRow(self,data):
         self.insertRow(self.rowcount)
         for i in range(len(data)):
-            self.setItem(self.rowcount,i,QTableWidgetItem(str(data[i])))
+            item=QTableWidgetItem(str(data[i]))
+            item.setTextAlignment(Qt.AlignHCenter)
+            # item.setBackground(QColor(255,0,0))
+            self.setItem(self.rowcount,i,item)
+            # self.item(self.rowcount,i).setBackground(QColor(255,0,0))
         self.rowcount=self.rowcount+1
     def myclear(self):
         for i in range(self.rowcount):
             self.removeRow(0)
         self.rowcount=0
 
-class sniffer(QObject):
-    progress=pyqtSignal(list)
-    # finished=pyqtSignal()
-    def __init__(self,filter_str=""):
-        super().__init__()
-        self.sniffer=AsyncSniffer(filter=filter_str,store=False,prn=(lambda x:self.callback(x)))
-        self.database=scapy.plist.PacketList()
-        self.history=scapy.plist.PacketList()
-        self.show=(lambda pkt:True)
-    def process(self,pkt):
-        link=pkt[Ether]
-        proto=link.type
-        protostr=""
-        if(proto==2048):
-            internet=pkt[IP]
-            proto=internet.proto
-            protostr='IP'
-            if(proto==6): protostr='TCP/'+protostr
-            elif(proto==17): protostr='UDP/'+protostr
-            elif(proto==1): protostr='ICMP/'+protostr
-            else: raise "NewProtocol"
-            data=[internet.src,internet.dst,protostr,internet.len]
-        elif(proto==34525):
-            internet=pkt[IPv6]
-            proto=internet.nh
-            protostr='IPv6'
-            if(proto==6): protostr='TCP/'+protostr
-            elif(proto==17): protostr='UDP/'+protostr
-            elif(proto==58): protostr='ICMPv6/'+protostr
-            else: raise "NewProtocol"
-            data=[internet.src,internet.dst,protostr,internet.plen]
-        elif(pkt[Ether].type==2054):
-            internet=pkt[ARP]
-            proto=internet.ptype
-            protostr='ARP'
-            if(proto==2048): protostr='IP/'+protostr
-            elif(proto==34525): protostr='IPv6/'+protostr
-            else: raise "NewProtocol"
-            data=[internet.psrc,internet.pdst,protostr,internet.plen]
-        else: raise "NewProtocol"
-        return data
-    def callback(self,pkt):
-        self.database.append(pkt)
-        if(not self.show(pkt)):return
-        self.history.append(pkt)
-        try: self.progress.emit(self.process(pkt))
-        except:
-            print(pkt.show())
-            raise RuntimeError
-    def running(self):
-        return self.sniffer.running
-    def start(self):
-        self.sniffer.start()
-    def pause(self):
-        if(self.sniffer.running):self.sniffer.stop()
-    def filter(self):
-        self.history=self.database.filter(self.show)
-        for pkt in self.history:
-            try: self.progress.emit(self.process(pkt))
-            except:
-                print(pkt.show())
-                raise RuntimeError
+class TreeView(QTreeWidget):
+    def __init__(self,parent):
+        super().__init__(parent)
+        self.setColumnCount(2)
+        self.setHeaderLabels(['Key','Value'])
+        self.rowcount=0
+    def getItem(self,key,value):
+        ele=QTreeWidgetItem()
+        if(not isinstance(key,list)):
+            ele.setText(0,key)
+            ele.setText(1,str(value))
+            return ele
+        ele.setText(0,key[0])
+        ele.setText(1,str(value[0]))
+        for i in range(1,len(key)):
+            ele.addChild(self.getItem(key[i],value[i]))
+        return ele
+    def work(self,key,value):
+        self.insertTopLevelItem(self.rowcount,self.getItem(key,value))
+        self.rowcount=self.rowcount+1
+    def myclear(self):
+        self.clear()
+        self.rowcount=0
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -111,12 +78,13 @@ class MainWindow(QMainWindow):
         self.bpfbtn=QPushButton('sniff',self)
         self.res=QPlainTextEdit(self)
         self.resbtn=QPushButton('filter',self)
+        self.tree=TreeView(self)
 
         self.sniffer=sniffer()
         self.layout()
         self.connect()
     def connect(self):
-        self.table.doubleClicked.connect(self.GetInfo)
+        self.table.clicked.connect(self.GetInfo)
         self.sniffer.progress.connect(self.table.AddRow)
         self.btnstart.clicked.connect(self.sniffer.start)
         self.btnstart.clicked.connect(lambda:self.btnstart.setEnabled(False))
@@ -129,8 +97,18 @@ class MainWindow(QMainWindow):
         self.resbtn.clicked.connect(self.resfilter)
     def GetInfo(self,index):
         row=index.row()
-        self.detail.setPlainText(self.sniffer.history[row].show(dump=True))
-        self.info.setPlainText(self.sniffer.history[row].summary())
+        pkt=self.sniffer.history[row]
+        self.detail.setPlainText(pkt.show(dump=True))
+        self.info.setPlainText(pkt.summary())
+
+        self.tree.myclear()
+        keys,value,next=pkt[Ether].getinfo()
+        self.tree.work(keys,value)
+        if(next!='IP'):return
+        keys,value,next=pkt[next].getinfo()
+        self.tree.work(keys,value)
+        keys,value,next=pkt[next].getinfo()
+        self.tree.work(keys,value)
     def layout(self):
         self.table.resize(1200,1500)
         self.table.move(0,100)
@@ -158,6 +136,9 @@ class MainWindow(QMainWindow):
         self.res.move(400,50)
         self.resbtn.resize(100,50)
         self.resbtn.move(1100,50)
+
+        self.tree.resize(500,1600)
+        self.tree.move(1900,0)
 
         self.show()
     def startover(self):
@@ -199,6 +180,11 @@ class MainWindow(QMainWindow):
 
 app=QApplication([])
 app.setStyle('Fusion')
+app.setFont(QFont('Courier'))
+scapy.layers.l2.Ether.getinfo=getEther
+scapy.layers.inet.IP.getinfo=getIP
+scapy.layers.inet.TCP.getinfo=getTCP
+scapy.layers.inet.UDP.getinfo=getUDP
 win=MainWindow()
 
 app.exec_()
