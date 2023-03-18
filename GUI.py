@@ -56,6 +56,8 @@ class HexTable(QTableWidget):
         header=self.horizontalHeader()
         # header.setSectionResizeMode(16,QHeaderView.Stretch)
         header.hide()
+        self.high_begin=0
+        self.high_end=0
     def work(self,hexs):
         tmp=hexs.split('  ')
         hexcode,hextext=tmp[0].split(' '),tmp[1]
@@ -67,17 +69,25 @@ class HexTable(QTableWidget):
         numi,numj=0,0
         for i in range(len(hexcode)):
             self.setItem(numi,numj,QTableWidgetItem(hexcode[i]))
+            self.setItem(numi,numj+17,QTableWidgetItem(hextext[i]))
             numj=numj+1
             if(numj==16):numi,numj=numi+1,0
-        numi,numj=0,17
-        for i in range(len(hextext)):
-            self.setItem(numi,numj,QTableWidgetItem(hextext[i]))
-            numj=numj+1
-            if(numj==33):numi,numj=numi+1,17
     def myclear(self):
         for i in range(self.rowcount):
             self.removeRow(0)
         self.rowcount=0
+    def color(self,begin,end,R,G,B):
+        numi,numj=floor(begin/16),begin%16
+        for i in range(begin,end+1):
+            self.item(numi,numj).setBackground(QColor(R,G,B))
+            self.item(numi,numj+17).setBackground(QColor(R,G,B))
+            numj=numj+1
+            if(numj==16):numi,numj=numi+1,0
+    def highlight(self,begin,end):
+        self.color(self.high_begin,self.high_end,255,255,255)
+        self.high_begin=begin
+        self.high_end=end
+        self.color(self.high_begin,self.high_end,22,119,179)
 
 class TreeView(QTreeWidget):
     def __init__(self,parent):
@@ -87,24 +97,27 @@ class TreeView(QTreeWidget):
         self.setColumnWidth(0,600)
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.rowcount=0
-    def getItem(self,key,value):
+    def getItem(self,key,value,begin,end,offset):
         ele=QTreeWidgetItem()
         if(not isinstance(key,list)):
             ele.setText(0,key)
             ele.setText(1,str(value))
+            ele.begin=begin+offset
+            ele.end=end+offset
             return ele
         ele.setText(0,key[0])
         ele.setText(1,str(value[0]))
+        ele.begin=begin[0]+offset
+        ele.end=end[0]+offset
         for i in range(1,len(key)):
-            ele.addChild(self.getItem(key[i],value[i]))
+            ele.addChild(self.getItem(key[i],value[i],begin[i],end[i],offset))
         return ele
-    def work(self,key,value):
-        self.insertTopLevelItem(self.rowcount,self.getItem(key,value))
+    def work(self,key,value,begin,end,offset):
+        self.insertTopLevelItem(self.rowcount,self.getItem(key,value,begin,end,offset))
         self.rowcount=self.rowcount+1
     def myclear(self):
         self.clear()
         self.rowcount=0
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -173,11 +186,8 @@ class MainWindow(QMainWindow):
         self.tree.clicked.connect(self.matchhex)
     def matchhex(self,index):
         item=self.tree.currentItem()
-        print(index.row(),index.column())
-        print(dir(index))
-        print(index.siblingAtRow())
-        print(item.text(0),item.text(1))
-        print(dir(item))
+        # print(item.begin,item.end)
+        if(item):self.hexpanel.highlight(floor(item.begin/8),floor(item.end/8))
     def GetInfo(self,index):
         row=index.row()
         pkt=self.sniffer.history[row]
@@ -187,13 +197,16 @@ class MainWindow(QMainWindow):
         self.hexpanel.work(hexstr(pkt))
 
         self.tree.myclear()
-        keys,value,next=pkt[Ether].getinfo()
-        self.tree.work(keys,value)
+        keys,value,begin,end,next=pkt[Ether].getinfo()
+        ether_end=end[0]+1
+        self.tree.work(keys,value,begin,end,0)
         if(next!='IP'):return
-        keys,value,next=pkt[next].getinfo()
-        self.tree.work(keys,value)
-        keys,value,next=pkt[next].getinfo()
-        self.tree.work(keys,value)
+        keys,value,begin,end,next=pkt[next].getinfo()
+        internet_end=end[0]+ether_end+1
+        self.tree.work(keys,value,begin,end,ether_end)
+        keys,value,begin,end,next=pkt[next].getinfo()
+        transport_end=end[0]+internet_end+1
+        self.tree.work(keys,value,begin,end,internet_end)
     def startover(self):
         if(self.first_flag):
             self.resbtn.setText('Filter')
