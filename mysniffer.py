@@ -37,7 +37,7 @@ def getUDP(pkt):
     begin=[0,16,32,48]
     end=[15,31,47,63]
     value=['UDP',pkt.sport,pkt.dport,pkt.len,pkt.chksum]
-    return keys,value
+    return keys,value,False
 
 class sniffer(QObject):
     progress=pyqtSignal(list)
@@ -79,6 +79,7 @@ class sniffer(QObject):
             else: raise "NewProtocol"
             data=[internet.psrc,internet.pdst,protostr,internet.plen]
         else: raise "NewProtocol"
+        data.append(pkt.summary())
         return data
     def callback(self,pkt):
         self.database.append(pkt)

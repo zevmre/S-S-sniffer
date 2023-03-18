@@ -3,9 +3,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 # from scapy.all import *
 from mysniffer import *
-
-Headers=['Source','Destination','Protocol','Length']
-sniff_result=[]
+from math import floor
 
 class MessageBox(QMessageBox):
     def __init__():
@@ -15,15 +13,22 @@ class MessageBox(QMessageBox):
 class TableView(QTableWidget):
     def __init__(self,*args):
         super().__init__(*args)
-        self.setHorizontalHeaderLabels(Headers)
+        self.setHorizontalHeaderLabels(['Source','Destination','Protocol','Length','Info'])
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.setSelectionBehavior(QTableWidget.SelectRows)
         self.setSelectionMode(QTableWidget.SingleSelection)
-        self.setColumnWidth(0,400)
-        self.setColumnWidth(1,400)
-        self.setColumnWidth(2,200)
-        self.setColumnWidth(3,100)
         self.rowcount=0
+        self.setColumnWidth(0,600)
+        self.setColumnWidth(1,600)
+        self.setColumnWidth(2,300)
+        self.setColumnWidth(3,200)
+        self.setColumnWidth(4,200)
+        header=self.horizontalHeader()
+        header.setSectionResizeMode(0,QHeaderView.Interactive)
+        header.setSectionResizeMode(1,QHeaderView.Interactive)
+        header.setSectionResizeMode(2,QHeaderView.Interactive)
+        header.setSectionResizeMode(3,QHeaderView.Interactive)
+        header.setSectionResizeMode(4,QHeaderView.Stretch)
     def AddRow(self,data):
         self.insertRow(self.rowcount)
         for i in range(len(data)):
@@ -32,7 +37,43 @@ class TableView(QTableWidget):
             # item.setBackground(QColor(255,0,0))
             self.setItem(self.rowcount,i,item)
             # self.item(self.rowcount,i).setBackground(QColor(255,0,0))
+        # self.resizeRowsToContents()
         self.rowcount=self.rowcount+1
+    def myclear(self):
+        for i in range(self.rowcount):
+            self.removeRow(0)
+        self.rowcount=0
+
+class HexTable(QTableWidget):
+    def __init__(self,*args):
+        # 16+...+16=33
+        super().__init__(*args)
+        self.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        for i in range(16):self.setColumnWidth(i,40)
+        self.setColumnWidth(16,40)
+        for i in range(17,33):self.setColumnWidth(i,10)
+        self.rowcount=0
+        header=self.horizontalHeader()
+        # header.setSectionResizeMode(16,QHeaderView.Stretch)
+        header.hide()
+    def work(self,hexs):
+        tmp=hexs.split('  ')
+        hexcode,hextext=tmp[0].split(' '),tmp[1]
+        for i in range(self.rowcount):self.removeRow(0)
+        rownum=floor((len(hexcode)-1)/16)+1
+        self.rowcount=rownum
+        for i in range(rownum):self.insertRow(0)
+        self.setVerticalHeaderLabels(["%0.4d"%(i*10) for i in range(rownum)])
+        numi,numj=0,0
+        for i in range(len(hexcode)):
+            self.setItem(numi,numj,QTableWidgetItem(hexcode[i]))
+            numj=numj+1
+            if(numj==16):numi,numj=numi+1,0
+        numi,numj=0,17
+        for i in range(len(hextext)):
+            self.setItem(numi,numj,QTableWidgetItem(hextext[i]))
+            numj=numj+1
+            if(numj==33):numi,numj=numi+1,17
     def myclear(self):
         for i in range(self.rowcount):
             self.removeRow(0)
@@ -43,6 +84,8 @@ class TreeView(QTreeWidget):
         super().__init__(parent)
         self.setColumnCount(2)
         self.setHeaderLabels(['Key','Value'])
+        self.setColumnWidth(0,600)
+        self.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.rowcount=0
     def getItem(self,key,value):
         ele=QTreeWidgetItem()
@@ -67,39 +110,81 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle('MySniffer')
         self.setWindowState(Qt.WindowMaximized)
+        self.first_flag=True
 
-        self.table=TableView(0,4,self)
-        self.detail=QPlainTextEdit(self)
-        self.info=QPlainTextEdit(self)
+        self.table=TableView(0,5,self)
+        # self.detail=QPlainTextEdit(self)
+        # self.info=QPlainTextEdit(self)
+        # self.hexpanel=QPlainTextEdit(self)
+        # self.hexpanel.setReadOnly(True)
+        self.hexpanel=HexTable(0,33,self)
         self.btnstart=QPushButton('Start',self)
         self.btnpause=QPushButton('Pause',self)
         self.btnpause.setEnabled(False)
-        self.bpf=QPlainTextEdit(self)
-        self.bpfbtn=QPushButton('sniff',self)
+        # self.bpf=QPlainTextEdit(self)
+        # self.bpfbtn=QPushButton('sniff',self)
         self.res=QPlainTextEdit(self)
-        self.resbtn=QPushButton('filter',self)
+        self.resbtn=QPushButton('Sniff',self)
         self.tree=TreeView(self)
 
         self.sniffer=sniffer()
-        self.layout()
+
+        btns=QSplitter(Qt.Horizontal)
+        btns.addWidget(self.btnstart)
+        btns.addWidget(self.btnpause)
+        btns.addWidget(self.res)
+        btns.addWidget(self.resbtn)
+        btns.setStretchFactor(2,1)
+        btns.setSizes([200,200,200,200])
+
+        hexs=QSplitter(Qt.Horizontal)
+        hexs.addWidget(self.tree)
+        hexs.addWidget(self.hexpanel)
+        hexs.setStretchFactor(0,1)
+        hexs.setStretchFactor(1,1)
+
+        tops=QSplitter(Qt.Vertical)
+        tops.addWidget(btns)
+        tops.addWidget(self.table)
+        # tops.addWidget(self.info)
+        tops.addWidget(hexs)
+        tops.setStretchFactor(1,2)
+        tops.setStretchFactor(2,1)
+        # tops.setStretchFactor(3,1)
+        tops.setSizes([100,200,200,200])
+
+        self.setCentralWidget(tops)
+        self.show()
+
+        # self.layout()
         self.connect()
     def connect(self):
         self.table.clicked.connect(self.GetInfo)
         self.sniffer.progress.connect(self.table.AddRow)
-        self.btnstart.clicked.connect(self.sniffer.start)
+        self.btnstart.clicked.connect(self.startover)
         self.btnstart.clicked.connect(lambda:self.btnstart.setEnabled(False))
         self.btnstart.clicked.connect(lambda:self.btnpause.setEnabled(True))
-        self.btnstart.clicked.connect(lambda:self.bpfbtn.setEnabled(False))
+        # self.btnstart.clicked.connect(lambda:self.bpfbtn.setEnabled(False))
         self.btnpause.clicked.connect(self.sniffer.pause)
         self.btnpause.clicked.connect(lambda:self.btnpause.setEnabled(False))
         self.btnpause.clicked.connect(lambda:self.btnstart.setEnabled(True))
-        self.bpfbtn.clicked.connect(self.startover)
+        # self.bpfbtn.clicked.connect(self.startover)
         self.resbtn.clicked.connect(self.resfilter)
+        self.tree.clicked.connect(self.matchhex)
+    def matchhex(self,index):
+        item=self.tree.currentItem()
+        print(index.row(),index.column())
+        print(dir(index))
+        print(index.siblingAtRow())
+        print(item.text(0),item.text(1))
+        print(dir(item))
     def GetInfo(self,index):
         row=index.row()
         pkt=self.sniffer.history[row]
-        self.detail.setPlainText(pkt.show(dump=True))
-        self.info.setPlainText(pkt.summary())
+        # self.detail.setPlainText(pkt.show(dump=True))
+        # self.info.setPlainText(pkt.summary())
+        # self.hexpanel.setPlainText(hexdump(pkt,dump=True))
+        self.hexpanel.work(hexstr(pkt))
 
         self.tree.myclear()
         keys,value,next=pkt[Ether].getinfo()
@@ -109,47 +194,11 @@ class MainWindow(QMainWindow):
         self.tree.work(keys,value)
         keys,value,next=pkt[next].getinfo()
         self.tree.work(keys,value)
-    def layout(self):
-        self.table.resize(1200,1500)
-        self.table.move(0,100)
-
-        self.detail.setReadOnly(True)
-        self.detail.resize(700,1600)
-        self.detail.move(1200,0)
-
-        self.info.setReadOnly(True)
-        self.info.resize(1900,100)
-        self.info.move(0,1600)
-
-        self.btnstart.resize(200,100)
-        self.btnstart.move(0,0)
-
-        self.btnpause.resize(200,100)
-        self.btnpause.move(200,0)
-
-        self.bpf.resize(700,50)
-        self.bpf.move(400,0)
-        self.bpfbtn.resize(100,50)
-        self.bpfbtn.move(1100,0)
-
-        self.res.resize(700,50)
-        self.res.move(400,50)
-        self.resbtn.resize(100,50)
-        self.resbtn.move(1100,50)
-
-        self.tree.resize(500,1600)
-        self.tree.move(1900,0)
-
-        self.show()
     def startover(self):
-        bpf_filter=self.bpf.toPlainText()
-        self.sniffer.progress.disconnect(self.table.AddRow)
-        self.btnstart.clicked.disconnect(self.sniffer.start)
-        self.btnpause.clicked.disconnect(self.sniffer.pause)
-        self.sniffer=sniffer(bpf_filter)
-        self.sniffer.progress.connect(self.table.AddRow)
-        self.btnstart.clicked.connect(self.sniffer.start)
-        self.btnpause.clicked.connect(self.sniffer.pause)
+        if(self.first_flag):
+            self.resbtn.setText('Filter')
+            self.first_flag=False
+        self.sniffer.start()
     def filter_func(self):
         filter_str=self.res.toPlainText()
         internet_protocols=['IP','IPv6','ARP']
@@ -158,7 +207,7 @@ class MainWindow(QMainWindow):
         func_str='True'
         for ele in elems:
             func_str=func_str+" and"
-            ele=ele.upper()
+            # ele=ele.upper()
             if ('not' in ele):
                 ele=ele[4:]
                 func_str=func_str+" not"
@@ -173,6 +222,16 @@ class MainWindow(QMainWindow):
                 func_str=func_str+" (pkt["+transport+"].sport=="+port_num+" or pkt["+transport+"].dport=="+port_num+")"
         return (lambda pkt:eval(func_str))
     def resfilter(self):
+        if(self.first_flag):
+            bpf_filter=self.res.toPlainText()
+            self.sniffer.progress.disconnect(self.table.AddRow)
+            self.btnstart.clicked.disconnect(self.startover)
+            self.btnpause.clicked.disconnect(self.sniffer.pause)
+            self.sniffer=sniffer(bpf_filter)
+            self.sniffer.progress.connect(self.table.AddRow)
+            self.btnstart.clicked.connect(self.startover)
+            self.btnpause.clicked.connect(self.sniffer.pause)
+            return
         self.sniffer.pause()
         self.table.myclear()
         self.sniffer.show=self.filter_func()
