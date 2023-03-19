@@ -60,6 +60,8 @@ class HexTable(QTableWidget):
         self.high_end=0
     def work(self,hexs):
         tmp=hexs.split('  ')
+        self.high_begin=0
+        self.high_end=-1
         hexcode,hextext=tmp[0].split(' '),tmp[1]
         for i in range(self.rowcount):self.removeRow(0)
         rownum=floor((len(hexcode)-1)/16)+1
@@ -77,7 +79,8 @@ class HexTable(QTableWidget):
             self.removeRow(0)
         self.rowcount=0
     def color(self,begin,end,R,G,B):
-        numi,numj=floor(begin/16),begin%16
+        # print(begin,end,R,G,B)
+        numi,numj=floor(begin/16),(begin%16)
         for i in range(begin,end+1):
             self.item(numi,numj).setBackground(QColor(R,G,B))
             self.item(numi,numj+17).setBackground(QColor(R,G,B))
@@ -186,7 +189,6 @@ class MainWindow(QMainWindow):
         self.tree.clicked.connect(self.matchhex)
     def matchhex(self,index):
         item=self.tree.currentItem()
-        # print(item.begin,item.end)
         if(item):self.hexpanel.highlight(floor(item.begin/8),floor(item.end/8))
     def GetInfo(self,index):
         row=index.row()
@@ -200,7 +202,6 @@ class MainWindow(QMainWindow):
         keys,value,begin,end,next=pkt[Ether].getinfo()
         ether_end=end[0]+1
         self.tree.work(keys,value,begin,end,0)
-        if(next!='IP'):return
         keys,value,begin,end,next=pkt[next].getinfo()
         internet_end=end[0]+ether_end+1
         self.tree.work(keys,value,begin,end,ether_end)
@@ -255,6 +256,7 @@ app.setStyle('Fusion')
 app.setFont(QFont('Courier'))
 scapy.layers.l2.Ether.getinfo=getEther
 scapy.layers.inet.IP.getinfo=getIP
+scapy.layers.inet6.IPv6.getinfo=getIPv6
 scapy.layers.inet.TCP.getinfo=getTCP
 scapy.layers.inet.UDP.getinfo=getUDP
 win=MainWindow()
