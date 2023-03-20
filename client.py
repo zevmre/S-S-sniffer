@@ -32,8 +32,8 @@ class chat_write(threading.Thread):
 				break
 
 sock=sk.socket(sk.AF_INET,sk.SOCK_STREAM)
-# ip=input("The IP address of server?")
-ip='10.206.54.204'
+ip=input("The IP address of server?")
+# ip='10.206.54.204'
 # ip='127.0.0.1'
 work(sock,'sock.connect((ip,8001))','connection')
 flag=1
@@ -42,8 +42,8 @@ chat_w=chat_write()
 send_expr='''
 data=input('');
 if data=='exit':
-	raise RuntimeError
-sock.sendall(data.encode());
+	sock.shutdown(sk.SHUT_RDWR)
+else:sock.sendall(data.encode());
 '''
 #输入exit退出通信
 recv_expr='''
