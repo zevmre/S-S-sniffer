@@ -5,11 +5,6 @@ from PyQt5.QtCore import *
 from mysniffer import *
 from math import floor
 
-class MessageBox(QMessageBox):
-    def __init__():
-        # show_interfaces()
-        return
-
 class TableView(QTableWidget):
     def __init__(self,*args):
         super().__init__(*args)
@@ -46,7 +41,6 @@ class TableView(QTableWidget):
 
 class HexTable(QTableWidget):
     def __init__(self,*args):
-        # 16+...+16=33
         super().__init__(*args)
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
         for i in range(16):self.setColumnWidth(i,40)
@@ -126,7 +120,13 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle('MySniffer')
         self.setWindowState(Qt.WindowMaximized)
-        self.first_flag=True
+        faces=str(IFACES).split('\n')
+        text,ok=QInputDialog.getItem(self,'Choose an Interface',faces[0],faces[1:])
+        if(ok):index=text.split('  ')[1]
+        else:index=0
+        bpf_filter,ok=QInputDialog.getText(self,'Input BPF filter','Would you like a BPF Filter?')
+
+        self.sniffer=sniffer(index,bpf_filter)
 
         self.table=TableView(0,5,self)
         # self.detail=QPlainTextEdit(self)
@@ -140,10 +140,8 @@ class MainWindow(QMainWindow):
         # self.bpf=QPlainTextEdit(self)
         # self.bpfbtn=QPushButton('sniff',self)
         self.res=QPlainTextEdit(self)
-        self.resbtn=QPushButton('Sniff',self)
+        self.resbtn=QPushButton('Filter',self)
         self.tree=TreeView(self)
-
-        self.sniffer=sniffer()
 
         btns=QSplitter(Qt.Horizontal)
         btns.addWidget(self.btnstart)
@@ -177,7 +175,7 @@ class MainWindow(QMainWindow):
     def connect(self):
         self.table.clicked.connect(self.GetInfo)
         self.sniffer.progress.connect(self.table.AddRow)
-        self.btnstart.clicked.connect(self.startover)
+        self.btnstart.clicked.connect(self.sniffer.start)
         self.btnstart.clicked.connect(lambda:self.btnstart.setEnabled(False))
         self.btnstart.clicked.connect(lambda:self.btnpause.setEnabled(True))
         # self.btnstart.clicked.connect(lambda:self.bpfbtn.setEnabled(False))
@@ -199,7 +197,10 @@ class MainWindow(QMainWindow):
         self.hexpanel.work(hexstr(pkt))
 
         self.tree.myclear()
-        keys,value,begin,end,next=pkt[Ether].getinfo()
+        if(pkt.haslayer('Ether')):
+            keys,value,begin,end,next=pkt[Ether].getinfo()
+        elif(pkt.haslayer('Loopback')):
+            keys,value,begin,end,next=pkt[Loopback].getinfo()
         ether_end=end[0]+1
         self.tree.work(keys,value,begin,end,0)
         keys,value,begin,end,next=pkt[next].getinfo()
@@ -208,11 +209,6 @@ class MainWindow(QMainWindow):
         keys,value,begin,end,next=pkt[next].getinfo()
         transport_end=end[0]+internet_end+1
         self.tree.work(keys,value,begin,end,internet_end)
-    def startover(self):
-        if(self.first_flag):
-            self.resbtn.setText('Filter')
-            self.first_flag=False
-        self.sniffer.start()
     def filter_func(self):
         filter_str=self.res.toPlainText()
         internet_protocols=['IP','IPv6','ARP']
@@ -225,6 +221,10 @@ class MainWindow(QMainWindow):
             if ('not' in ele):
                 ele=ele[4:]
                 func_str=func_str+" not"
+            # for i in internet_protocols:
+            #     if(i in ele):
+            #         internet=ele
+            #         func_str=func_str+" pkt.haslayer("+ele+")"
             if(ele in internet_protocols):
                 internet=ele
                 func_str=func_str+" pkt.haslayer("+ele+")"
@@ -236,24 +236,16 @@ class MainWindow(QMainWindow):
                 func_str=func_str+" (pkt["+transport+"].sport=="+port_num+" or pkt["+transport+"].dport=="+port_num+")"
         return (lambda pkt:eval(func_str))
     def resfilter(self):
-        if(self.first_flag):
-            bpf_filter=self.res.toPlainText()
-            self.sniffer.progress.disconnect(self.table.AddRow)
-            self.btnstart.clicked.disconnect(self.startover)
-            self.btnpause.clicked.disconnect(self.sniffer.pause)
-            self.sniffer=sniffer(bpf_filter)
-            self.sniffer.progress.connect(self.table.AddRow)
-            self.btnstart.clicked.connect(self.startover)
-            self.btnpause.clicked.connect(self.sniffer.pause)
-            return
         self.sniffer.pause()
         self.table.myclear()
         self.sniffer.show=self.filter_func()
         self.sniffer.filter()
+        self.sniffer.start()
 
 app=QApplication([])
 app.setStyle('Fusion')
 app.setFont(QFont('Courier'))
+scapy.layers.l2.Loopback.getinfo=getLoop
 scapy.layers.l2.Ether.getinfo=getEther
 scapy.layers.inet.IP.getinfo=getIP
 scapy.layers.inet6.IPv6.getinfo=getIPv6

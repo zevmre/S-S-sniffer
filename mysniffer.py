@@ -4,9 +4,16 @@ from PyQt5.QtCore import *
 from scapy.all import *
 
 Ethertypes={2048:'IP',2054:'ARP',34525:'IPv6'}
+Loopbacktypes={2:'IP'}
 ProtocolNumbers={1:'ICMP',6:'TCP',17:'UDP',58:'ICMPv6'}
 PortNumbers={7:'Echo',9:'Discard',13:'Daytime',17:'Quote of the Day',20:'FTP data',21:'FTP control',22:'SSH',23:'Telnet',25:'SMTP',37:'Time',42:'Host Name',43:'Whois',53:'DNS',80:'HTTP',115:'SimpleFTP',123:'NTP',443:'HTTPS',546:'DHCPv6 Client',547:'DHCPv6 Server'}
 
+def getLoop(pkt):
+    keys=['Protocol','LoopbackType']
+    begin=[0,0]
+    end=[31,31]
+    value=['Loopback',Loopbacktypes[pkt.type]]
+    return keys,value,begin,end,Loopbacktypes[pkt.type]
 def getEther(pkt):
     keys=['Protocol','Destination','Source','EtherType']
     begin=[0,0,48,96]
@@ -39,7 +46,7 @@ def getTCP(pkt):
     else: sport=pkt.sport
     if(pkt.dport in PortNumbers):dport=PortNumbers[pkt.dport]
     else: dport=pkt.dport
-    value=['TCP',sport,dport,pkt.seq,pkt.ack,pkt.dataofs,pkt.reserved,[flags_str,flags_str[0],flags_str[1],flags_str[2],flags_str[3],flags_str[4],flags_str[5],flags_str[6],flags_str[7]],pkt.window,pkt.chksum,pkt.urgptr,pkt.options]
+    value=['TCP',sport,dport,pkt.seq,pkt.ack,pkt.dataofs,pkt.reserved,[str(pkt.flags),flags_str[0],flags_str[1],flags_str[2],flags_str[3],flags_str[4],flags_str[5],flags_str[6],flags_str[7]],pkt.window,pkt.chksum,pkt.urgptr,pkt.options]
     return keys,value,begin,end,False
 def getUDP(pkt):
     keys=['Protocol','Source Port','Destination Port','Length','Checksum']
@@ -51,17 +58,19 @@ def getUDP(pkt):
 class sniffer(QObject):
     progress=pyqtSignal(list)
     # finished=pyqtSignal()
-    def __init__(self,filter_str=""):
+    def __init__(self,index,filter_str=""):
         super().__init__()
-        self.sniffer=AsyncSniffer(filter=filter_str,store=False,prn=(lambda x:self.callback(x)))
+        if(index):iface_name=IFACES.dev_from_index(index).name
+        else:iface_name=""
+        self.sniffer=AsyncSniffer(iface=iface_name,filter=filter_str,store=False,prn=(lambda x:self.callback(x)))
         self.database=scapy.plist.PacketList()
         self.history=scapy.plist.PacketList()
         self.show=(lambda pkt:True)
     def process(self,pkt):
-        link=pkt[Ether]
-        proto=link.type
+        if(pkt.haslayer('Loopback')):link,proto=pkt[Loopback],Loopbacktypes[pkt[Loopback].type]
+        elif(pkt.haslayer('Ether')):link,proto=pkt[Ether],Ethertypes[pkt[Ether].type]
         protostr=""
-        if(proto==2048):
+        if(proto=='IP'):
             internet=pkt[IP]
             proto=internet.proto
             protostr='IP'
@@ -70,7 +79,7 @@ class sniffer(QObject):
             elif(proto==1): protostr='ICMP/'+protostr
             else: raise "NewProtocol"
             data=[internet.src,internet.dst,protostr,internet.len]
-        elif(proto==34525):
+        elif(proto=='IPv6'):
             internet=pkt[IPv6]
             proto=internet.nh
             protostr='IPv6'
@@ -79,7 +88,7 @@ class sniffer(QObject):
             elif(proto==58): protostr='ICMPv6/'+protostr
             else: raise "NewProtocol"
             data=[internet.src,internet.dst,protostr,internet.plen]
-        elif(pkt[Ether].type==2054):
+        elif(proto=='ARP'):
             internet=pkt[ARP]
             proto=internet.ptype
             protostr='ARP'
