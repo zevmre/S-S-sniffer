@@ -77,7 +77,7 @@ class sniffer(QObject):
             if(proto==6): protostr='TCP/'+protostr
             elif(proto==17): protostr='UDP/'+protostr
             elif(proto==1): protostr='ICMP/'+protostr
-            else: raise "NewProtocol"
+            # else: raise "NewProtocol"
             data=[internet.src,internet.dst,protostr,internet.len]
         elif(proto=='IPv6'):
             internet=pkt[IPv6]
@@ -86,7 +86,7 @@ class sniffer(QObject):
             if(proto==6): protostr='TCP/'+protostr
             elif(proto==17): protostr='UDP/'+protostr
             elif(proto==58): protostr='ICMPv6/'+protostr
-            else: raise "NewProtocol"
+            # else: raise "NewProtocol"
             data=[internet.src,internet.dst,protostr,internet.plen]
         elif(proto=='ARP'):
             internet=pkt[ARP]
@@ -94,9 +94,9 @@ class sniffer(QObject):
             protostr='ARP'
             if(proto==2048): protostr='IP/'+protostr
             elif(proto==34525): protostr='IPv6/'+protostr
-            else: raise "NewProtocol"
+            # else: raise "NewProtocol"
             data=[internet.psrc,internet.pdst,protostr,internet.plen]
-        else: raise "NewProtocol"
+        # else: raise "NewProtocol"
         data.append(pkt.summary())
         return data
     def callback(self,pkt):

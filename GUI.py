@@ -203,19 +203,24 @@ class MainWindow(QMainWindow):
             keys,value,begin,end,next=pkt[Loopback].getinfo()
         ether_end=end[0]+1
         self.tree.work(keys,value,begin,end,0)
-        keys,value,begin,end,next=pkt[next].getinfo()
-        internet_end=end[0]+ether_end+1
-        self.tree.work(keys,value,begin,end,ether_end)
-        keys,value,begin,end,next=pkt[next].getinfo()
-        transport_end=end[0]+internet_end+1
-        self.tree.work(keys,value,begin,end,internet_end)
+        if(not 'ARP' in next):
+            keys,value,begin,end,next=pkt[next].getinfo()
+            internet_end=end[0]+ether_end+1
+            self.tree.work(keys,value,begin,end,ether_end)
+            if(not 'ICMP' in next):
+                keys,value,begin,end,next=pkt[next].getinfo()
+                transport_end=end[0]+internet_end+1
+                self.tree.work(keys,value,begin,end,internet_end)
     def filter_func(self):
         filter_str=self.res.toPlainText()
         internet_protocols=['IP','IPv6','ARP']
         transport_protocols=['TCP','UDP','ICMP','ICMPv6']
         elems=filter_str.split(' and ')
         func_str='True'
+        # print(elems)
         for ele in elems:
+            # print(ele)
+            if(not ele):continue
             func_str=func_str+" and"
             # ele=ele.upper()
             if ('not' in ele):
@@ -231,16 +236,19 @@ class MainWindow(QMainWindow):
             elif(ele in transport_protocols):
                 transport=ele
                 func_str=func_str+" pkt.haslayer("+ele+")"
-            else:
+            elif('port' in ele):
                 port_num=ele.split(" ")[-1]
                 func_str=func_str+" (pkt["+transport+"].sport=="+port_num+" or pkt["+transport+"].dport=="+port_num+")"
         return (lambda pkt:eval(func_str))
     def resfilter(self):
-        self.sniffer.pause()
+        if(self.sniffer.running()):
+            flag=True
+            self.sniffer.pause()
+        else:flag=False
         self.table.myclear()
         self.sniffer.show=self.filter_func()
         self.sniffer.filter()
-        self.sniffer.start()
+        if(flag):self.sniffer.start()
 
 app=QApplication([])
 app.setStyle('Fusion')
